@@ -61,7 +61,7 @@ const advanceTrack = async (io: Server, roomId: string) => {
   }
 
   const nextTrack = room.musicState.poll.options[winningIndex];
-  let finalTrack = nextTrack;
+  let finalTrack: string | null = nextTrack || null;
   
   if (!nextTrack) {
     const playlist = getPlaylist();
