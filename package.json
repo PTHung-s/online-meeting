@@ -1,0 +1,22 @@
+{
+  "name": "video-call",
+  "version": "1.0.0",
+  "description": "Simple Google Meet-like app (no auth) using WebRTC + Socket.IO",
+  "main": "server/src/index.ts",
+  "type": "module",
+  "scripts": {
+    "postinstall": "npm install --prefix client && npm install --prefix server",
+    "build": "npm run build --prefix client && npm run build --prefix server",
+    "start": "npm start --prefix server",
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\""
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1",
+    "express": "^4.19.2",
+    "nanoid": "^5.0.7",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
