@@ -41,6 +41,7 @@ const MeetingPage: React.FC = () => {
     roomId,
     roomName,
     lkToken,
+    lkServerUrl, // Added
     reset,
     showPeerViewer,
     isMicEnabled,
@@ -339,9 +340,9 @@ const updateMyActiveState = (active: boolean) => {
   };
   
   const serverUrl = useMemo(() => {
-    const rawUrl = import.meta.env.VITE_LIVEKIT_URL || 'your-project.livekit.cloud';
+    const rawUrl = lkServerUrl || 'your-project.livekit.cloud';
     return 'wss://' + rawUrl.replace('https://', '').replace('wss://', '');
-  }, []);
+  }, [lkServerUrl]);
 
   const handleCopyLink = () => {
     const link = `${window.location.origin}?room=${roomId}`;

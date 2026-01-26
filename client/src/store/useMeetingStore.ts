@@ -9,7 +9,8 @@ interface MeetingState {
   roomName: string | null;
   userName: string | null;
   localStream: MediaStream | null;
-  lkToken: string | null; // Added for LiveKit
+  lkToken: string | null;
+  lkServerUrl: string | null; // Added
   peers: Peer[];
   messages: Message[];
   isHost: boolean;
@@ -64,7 +65,8 @@ interface MeetingState {
   
   setRoom: (id: string, name: string, userName?: string) => void;
   setLocalStream: (stream: MediaStream | null) => void;
-  setLkToken: (token: string | null) => void; // Added
+  setLkToken: (token: string | null) => void;
+  setLkServerUrl: (url: string | null) => void; // Added
   addPeer: (peer: Peer) => void;
   removePeer: (socketId: string) => void;
   updatePeerStream: (socketId: string, stream: MediaStream) => void;
@@ -140,7 +142,8 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
   roomName: null,
   userName: null,
   localStream: null,
-  lkToken: null, // Added
+  lkToken: null,
+  lkServerUrl: null, // Added
   peers: [],
   messages: [],
   isHost: false,
@@ -229,7 +232,8 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
 
   setRoom: (id, name, userName) => set({ roomId: id, roomName: name, userName: userName }),
   setLocalStream: (stream) => set({ localStream: stream }),
-  setLkToken: (token) => set({ lkToken: token }), // Added
+  setLkToken: (token) => set({ lkToken: token }), 
+  setLkServerUrl: (url) => set({ lkServerUrl: url }), // Added
   addPeer: (peer) => set((state) => {
     // Check if peer already exists by socketId OR by name (for reconnection)
     const existsBySocket = state.peers.find(p => p.socketId === peer.socketId);

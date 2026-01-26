@@ -9,7 +9,7 @@ const LobbyPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const { setRoom, setIsHost, setPeers, setLkToken, setMicEnabled, setCameraEnabled } = useMeetingStore();
+  const { setRoom, setIsHost, setPeers, setLkToken, setLkServerUrl, setMicEnabled, setCameraEnabled } = useMeetingStore();
   
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -146,6 +146,7 @@ const LobbyPage: React.FC = () => {
       }
 
       setLkToken(tokenData.token);
+      setLkServerUrl(tokenData.serverUrl); // Added
       setRoom(id, name, userName);
       
       // Save to localStorage for persistence across reloads

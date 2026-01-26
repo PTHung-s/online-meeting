@@ -80,7 +80,10 @@ app.get('/api/token', async (req, res) => {
     canSubscribe: true,
   });
 
-  res.json({ token: await at.toJwt() });
+  res.json({ 
+    token: await at.toJwt(),
+    serverUrl: LIVEKIT_URL 
+  });
 });
 
 app.get('/api/rooms', (req, res) => {
