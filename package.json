@@ -5,8 +5,7 @@
   "main": "server/src/index.ts",
   "type": "module",
   "scripts": {
-    "postinstall": "npm install --prefix client && npm install --prefix server",
-    "build": "npm run build --prefix client && npm run build --prefix server",
+    "build": "npm install --prefix client && npm run build --prefix client && npm install --prefix server && npm run build --prefix server",
     "start": "npm start --prefix server",
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\""
   },
