@@ -1,4 +1,6 @@
+# Thêm các dòng này vào .gitignore
 node_modules/
-.DS_Store
-npm-debug.log*
+dist/
 .env
+.DS_Store
+*.log
