@@ -5,12 +5,16 @@ import type { Quiz, QuizQuestion } from '../types/quiz';
 import { socket } from '../services/socket';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import AdaptiveQuizManager from './AdaptiveQuizManager';
 
 const QuizManager: React.FC = () => {
-  const { isHost, activeQuiz, setActiveQuiz, quizResponses, peers, roomId, draftQuiz, setDraftQuiz } = useMeetingStore();
-  const [view, setView] = useState<'list' | 'create' | 'active' | 'results'>(activeQuiz ? 'active' : 'list');
+  const { isHost, activeQuiz, setActiveQuiz, quizResponses, peers, roomId, draftQuiz, setDraftQuiz, activeAdaptive, adaptiveRankings } = useMeetingStore();
+  const [view, setView] = useState<'list' | 'create' | 'active' | 'results' | 'adaptive'>(activeQuiz ? 'active' : (activeAdaptive || adaptiveRankings) ? 'adaptive' : 'list');
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
   const [aiCount, setAiCount] = useState(5);
@@ -137,6 +141,10 @@ const QuizManager: React.FC = () => {
       }
     }
   };
+
+  if (view === 'adaptive') {
+    return <AdaptiveQuizManager onBack={() => setView('list')} />;
+  }
 
   if (view === 'create') {
     return (
@@ -288,7 +296,7 @@ const QuizManager: React.FC = () => {
                                <div className="flex-1 min-w-0">
                                   <div className={`text-[12px] font-bold leading-snug w-full prose prose-slate prose-sm max-w-none ${editingId === q.id ? '' : 'truncate line-clamp-2'}`}>
                                      <ReactMarkdown 
-                                       remarkPlugins={[remarkGfm]}
+                                       remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}
                                        components={{
                                           code: ({node, inline, className, children, ...props}: any) => {
                                             const match = /language-(\w+)/.exec(className || '');
@@ -531,7 +539,7 @@ const QuizManager: React.FC = () => {
                         <span className="text-[9px] font-black text-slate-400 bg-slate-100 w-4 h-4 rounded flex items-center justify-center shrink-0 mt-0.5">{idx+1}</span>
                         <div className="text-[11px] font-bold text-slate-700 leading-snug w-full prose prose-slate prose-sm max-w-none">
                             <ReactMarkdown 
-                              remarkPlugins={[remarkGfm]}
+                              remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}
                               components={{
                                 code: ({node, inline, className, children, ...props}: any) => {
                                   const match = /language-(\w+)/.exec(className || '');
@@ -614,13 +622,22 @@ const QuizManager: React.FC = () => {
       </div>
       
       {isHost ? (
-        <button 
-          onClick={() => setView('create')}
-          className="w-full max-w-[220px] py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 hover:scale-105 active:scale-95 group relative z-10 uppercase tracking-widest text-[11px]"
-        >
-          <Plus size={18} className="group-hover:rotate-90 transition-transform duration-300" />
-          TẠO MỚI NGAY
-        </button>
+        <div className="flex flex-col gap-3 w-full max-w-[220px] relative z-10">
+          <button
+            onClick={() => setView('create')}
+            className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 hover:scale-105 active:scale-95 group uppercase tracking-widest text-[11px]"
+          >
+            <Plus size={18} className="group-hover:rotate-90 transition-transform duration-300" />
+            TẠO TRẮC NGHIỆM
+          </button>
+          <button
+            onClick={() => setView('adaptive')}
+            className="w-full py-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-black shadow-xl shadow-amber-100 transition-all flex items-center justify-center gap-2 hover:scale-105 active:scale-95 group uppercase tracking-widest text-[11px]"
+          >
+            <Zap size={18} className="group-hover:animate-pulse" />
+            ADAPTIVE QUIZ
+          </button>
+        </div>
       ) : (
         <div className="flex flex-col items-center gap-3 text-slate-400 relative z-10">
           <Loader2 className="animate-spin text-indigo-500 w-5 h-5" />

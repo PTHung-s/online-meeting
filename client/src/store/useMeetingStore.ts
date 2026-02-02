@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Peer, Message, MusicState } from '../types';
 import type { AiMessage, AiAttachment } from '../types/ai';
-import type { Quiz, QuizResponse, QuizStats } from '../types/quiz';
+import type { Quiz, QuizResponse, QuizStats, AdaptiveSession, AdaptiveQuestionResult, QuizQuestion } from '../types/quiz';
 
 interface MeetingState {
   roomId: string | null;
@@ -44,6 +44,34 @@ interface MeetingState {
   // Persistence for Quiz Creation
   draftQuiz: Partial<Quiz>;
   setDraftQuiz: (quiz: Partial<Quiz>) => void;
+
+  // Adaptive Quiz State
+  activeAdaptive: AdaptiveSession | null;
+  adaptiveCurrentQuestion: QuizQuestion | null;
+  adaptiveQuestionIndex: number;
+  adaptiveMyAnswer: number | null;
+  adaptiveMyResult: boolean | null;
+  adaptiveAnswerProgress: { count: number; total: number };
+  adaptiveQuestionResults: AdaptiveQuestionResult[];
+  adaptiveScores: { socketId: string; userName: string; score: number }[];
+  adaptiveRankings: { socketId: string; userName: string; score: number }[] | null;
+  adaptiveCountdown: number;
+  adaptiveQuestionQueue: QuizQuestion[];
+  addToAdaptiveQueue: (questions: QuizQuestion[]) => void;
+  removeFromAdaptiveQueue: (id: string) => void;
+  shiftAdaptiveQueue: () => QuizQuestion | undefined;
+  setAdaptiveQuestionQueue: (queue: QuizQuestion[]) => void;
+  setActiveAdaptive: (session: AdaptiveSession | null) => void;
+  setAdaptiveCurrentQuestion: (question: QuizQuestion | null, index: number) => void;
+  setAdaptiveMyAnswer: (answer: number | null) => void;
+  setAdaptiveMyResult: (result: boolean | null) => void;
+  setAdaptiveAnswerProgress: (progress: { count: number; total: number }) => void;
+  addAdaptiveQuestionResult: (result: AdaptiveQuestionResult) => void;
+  setAdaptiveScores: (scores: { socketId: string; userName: string; score: number }[]) => void;
+  setAdaptiveQuestionResults: (results: AdaptiveQuestionResult[]) => void;
+  setAdaptiveRankings: (rankings: { socketId: string; userName: string; score: number }[] | null) => void;
+  setAdaptiveCountdown: (seconds: number) => void;
+  resetAdaptive: () => void;
 
   // Code Editor State
   isCodeEditorOpen: boolean;
@@ -202,6 +230,41 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
   // Draft Quiz Persistence
   draftQuiz: { title: '', questions: [] },
   setDraftQuiz: (quiz) => set({ draftQuiz: quiz }),
+
+  // Adaptive Quiz Initial State
+  activeAdaptive: null,
+  adaptiveCurrentQuestion: null,
+  adaptiveQuestionIndex: 0,
+  adaptiveMyAnswer: null,
+  adaptiveMyResult: null,
+  adaptiveAnswerProgress: { count: 0, total: 0 },
+  adaptiveQuestionResults: [],
+  adaptiveScores: [],
+  adaptiveRankings: null,
+  adaptiveCountdown: 0,
+  adaptiveQuestionQueue: [],
+  addToAdaptiveQueue: (questions) => set((state) => ({ adaptiveQuestionQueue: [...state.adaptiveQuestionQueue, ...questions] })),
+  removeFromAdaptiveQueue: (id) => set((state) => ({ adaptiveQuestionQueue: state.adaptiveQuestionQueue.filter(q => q.id !== id) })),
+  shiftAdaptiveQueue: () => {
+    let first: QuizQuestion | undefined;
+    set((state) => {
+      first = state.adaptiveQuestionQueue[0];
+      return { adaptiveQuestionQueue: state.adaptiveQuestionQueue.slice(1) };
+    });
+    return first;
+  },
+  setAdaptiveQuestionQueue: (queue) => set({ adaptiveQuestionQueue: queue }),
+  setActiveAdaptive: (session) => set({ activeAdaptive: session, adaptiveQuestionResults: session ? [] : [], adaptiveScores: session ? [] : [], adaptiveRankings: null, adaptiveCurrentQuestion: null, adaptiveQuestionIndex: 0, adaptiveMyAnswer: null, adaptiveMyResult: null, adaptiveAnswerProgress: { count: 0, total: 0 }, adaptiveCountdown: 0, adaptiveQuestionQueue: [] }),
+  setAdaptiveCurrentQuestion: (question, index) => set({ adaptiveCurrentQuestion: question, adaptiveQuestionIndex: index, adaptiveMyAnswer: null, adaptiveMyResult: null, adaptiveAnswerProgress: { count: 0, total: 0 } }),
+  setAdaptiveMyAnswer: (answer) => set({ adaptiveMyAnswer: answer }),
+  setAdaptiveMyResult: (result) => set({ adaptiveMyResult: result }),
+  setAdaptiveAnswerProgress: (progress) => set({ adaptiveAnswerProgress: progress }),
+  addAdaptiveQuestionResult: (result) => set((state) => ({ adaptiveQuestionResults: [...state.adaptiveQuestionResults, result] })),
+  setAdaptiveScores: (scores) => set({ adaptiveScores: scores }),
+  setAdaptiveQuestionResults: (results) => set({ adaptiveQuestionResults: results }),
+  setAdaptiveRankings: (rankings) => set({ adaptiveRankings: rankings }),
+  setAdaptiveCountdown: (seconds) => set({ adaptiveCountdown: seconds }),
+  resetAdaptive: () => set({ activeAdaptive: null, adaptiveCurrentQuestion: null, adaptiveQuestionIndex: 0, adaptiveMyAnswer: null, adaptiveMyResult: null, adaptiveAnswerProgress: { count: 0, total: 0 }, adaptiveQuestionResults: [], adaptiveScores: [], adaptiveRankings: null, adaptiveCountdown: 0, adaptiveQuestionQueue: [] }),
 
   // Code Editor Initial State
   isCodeEditorOpen: false,
@@ -441,7 +504,18 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
     aiMessages: [],
     aiInput: '',
     aiAttachments: [],
-    draftQuiz: { title: '', questions: [] }
+    draftQuiz: { title: '', questions: [] },
+    activeAdaptive: null,
+    adaptiveCurrentQuestion: null,
+    adaptiveQuestionIndex: 0,
+    adaptiveMyAnswer: null,
+    adaptiveMyResult: null,
+    adaptiveAnswerProgress: { count: 0, total: 0 },
+    adaptiveQuestionResults: [],
+    adaptiveScores: [],
+    adaptiveRankings: null,
+    adaptiveCountdown: 0,
+    adaptiveQuestionQueue: [],
   })
 }), {
   name: 'meeting-storage',

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, Loader2, Trash2, Download, Eye, EyeOff, Bot } from 'lucide-react';
+import { Play, Loader2, Trash2, Download, Eye, EyeOff, Bot, Lock } from 'lucide-react';
 import { useMeetingStore } from '../store/useMeetingStore';
 import { pistonService, commonLanguages } from '../services/piston';
 import { socket } from '../services/socket';
@@ -31,7 +31,9 @@ const CodeEditor: React.FC = () => {
     updatePeerCursor,
     removePeerCursor,
     stdin,
-    attachToAi
+    attachToAi,
+    activeQuiz,
+    activeAdaptive
   } = useMeetingStore();
 
   const [isEditorReady, setIsEditorReady] = useState(false);
@@ -470,7 +472,9 @@ const CodeEditor: React.FC = () => {
     : selectedLanguage;
 
   // Admin can edit student's code. Others can only view.
-  const isReadOnly = viewingPeerCode !== null && !isHost;
+  // Lock editor for students during active quiz
+  const isQuizLocked = !isHost && (!!activeQuiz || !!activeAdaptive);
+  const isReadOnly = (viewingPeerCode !== null && !isHost) || isQuizLocked;
 
   const handleEditorChange = (value: string | undefined) => {
     if (isApplyingRemoteChange.current) return;
@@ -700,6 +704,15 @@ const CodeEditor: React.FC = () => {
 
       {/* Main Area: Editor Only */}
       <div className="flex-1 flex overflow-hidden relative">
+        {isQuizLocked && (
+          <div className="absolute inset-0 z-10 bg-black/50 flex items-center justify-center pointer-events-none">
+            <div className="bg-[#252526] border border-yellow-500/30 rounded-lg px-6 py-4 text-center">
+              <Lock size={24} className="text-yellow-400 mx-auto mb-2" />
+              <p className="text-yellow-400 font-medium text-sm">Code Editor đang bị khóa</p>
+              <p className="text-gray-400 text-xs mt-1">Vui lòng hoàn thành bài trắc nghiệm</p>
+            </div>
+          </div>
+        )}
         <Editor
           height="100%"
           language={getMonacoLanguage(currentLanguage.name)}

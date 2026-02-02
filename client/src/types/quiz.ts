@@ -45,3 +45,30 @@ export interface QuizStats {
     timeTaken: number;
   }[];
 }
+
+// === Adaptive Quiz Types ===
+
+export interface AdaptiveSession {
+  id: string;
+  title: string;
+  status: 'active' | 'ended';
+  createdAt: number;
+}
+
+export interface AdaptiveQuestionResult {
+  question: QuizQuestion;
+  results: {
+    socketId: string;
+    userName: string;
+    selectedOption: number;
+    isCorrect: boolean;
+  }[];
+  correctCount: number;
+  totalCount: number;
+}
+
+export interface AdaptiveRecommendation {
+  topics: string[];
+  questions: QuizQuestion[];
+  questionsAlt: QuizQuestion[];
+}

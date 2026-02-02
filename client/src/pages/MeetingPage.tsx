@@ -178,6 +178,40 @@ const MeetingPage: React.FC = () => {
       useMeetingStore.getState().setActiveQuiz(null);
     });
 
+    // Adaptive Quiz events
+    socket.on('adaptive:started', ({ session }) => {
+      const store = useMeetingStore.getState();
+      store.setActiveAdaptive(session);
+      store.setActiveTab('quiz');
+    });
+    socket.on('adaptive:question', ({ question, questionIndex }) => {
+      useMeetingStore.getState().setAdaptiveCurrentQuestion(question, questionIndex);
+    });
+    socket.on('adaptive:answer-received', ({ count, total }) => {
+      useMeetingStore.getState().setAdaptiveAnswerProgress({ count, total });
+    });
+    socket.on('adaptive:answer-confirmed', ({ isCorrect }) => {
+      useMeetingStore.getState().setAdaptiveMyResult(isCorrect);
+    });
+    socket.on('adaptive:question-stats', ({ questionResult, scores }) => {
+      const store = useMeetingStore.getState();
+      store.addAdaptiveQuestionResult(questionResult);
+      store.setAdaptiveScores(scores);
+      store.setAdaptiveCurrentQuestion(null, store.adaptiveQuestionIndex);
+    });
+    socket.on('adaptive:ended', ({ rankings }) => {
+      const store = useMeetingStore.getState();
+      store.setAdaptiveRankings(rankings);
+      store.setActiveAdaptive(null);
+    });
+    socket.on('adaptive:countdown', ({ seconds }) => {
+      useMeetingStore.getState().setAdaptiveCountdown(seconds);
+    });
+    socket.on('adaptive:auto-next', () => {
+      // Handled by AdaptiveQuizManager component
+      window.dispatchEvent(new CustomEvent('adaptive:auto-next'));
+    });
+
     socket.on('room:hostChanged', ({ hostId }) => {
       useMeetingStore.getState().setHostId(hostId);
     });
@@ -205,6 +239,14 @@ const MeetingPage: React.FC = () => {
       socket.off('quiz:started');
       socket.off('quiz:submitted');
       socket.off('quiz:ended');
+      socket.off('adaptive:started');
+      socket.off('adaptive:question');
+      socket.off('adaptive:answer-received');
+      socket.off('adaptive:answer-confirmed');
+      socket.off('adaptive:question-stats');
+      socket.off('adaptive:ended');
+      socket.off('adaptive:countdown');
+      socket.off('adaptive:auto-next');
       socket.off('room:hostChanged');
     };
   }, [addPeer, removePeer, updatePeerState, updatePeerCode, removePeerCode]);

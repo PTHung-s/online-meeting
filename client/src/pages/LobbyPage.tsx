@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { socket } from '../services/socket';
 import { useMeetingStore } from '../store/useMeetingStore';
-import { Camera, Mic, MicOff, VideoOff } from 'lucide-react';
+import { Camera, Mic, MicOff, VideoOff, Users, Lock } from 'lucide-react';
 
 const LobbyPage: React.FC = () => {
   const [roomName, setRoomName] = useState('');
@@ -11,6 +11,7 @@ const LobbyPage: React.FC = () => {
   const [isVideoOff, setIsVideoOff] = useState(false);
   const { setRoom, setIsHost, setPeers, setLkToken, setLkServerUrl, setMicEnabled, setCameraEnabled } = useMeetingStore();
   
+  const [rooms, setRooms] = useState<Array<{ id: string; name: string; hostName: string; locked: boolean; size: number }>>([]);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -21,6 +22,24 @@ const LobbyPage: React.FC = () => {
     if (roomIdParam) {
       setRoomName(roomIdParam);
     }
+  }, []);
+
+  // Fetch room list on mount and listen for updates
+  useEffect(() => {
+    const fetchRooms = async () => {
+      try {
+        const res = await fetch(`${window.location.origin}/api/rooms`);
+        const data = await res.json();
+        setRooms(data.rooms || []);
+      } catch (e) {
+        console.error('Failed to fetch rooms:', e);
+      }
+    };
+    fetchRooms();
+
+    if (!socket.connected) socket.connect();
+    socket.on('room:list', (roomList) => setRooms(roomList || []));
+    return () => { socket.off('room:list'); };
   }, []);
 
   useEffect(() => {
@@ -82,7 +101,7 @@ const LobbyPage: React.FC = () => {
     const res = await fetch(`${window.location.origin}/api/rooms`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: roomName, password })
+      body: JSON.stringify({ name: roomName, password, hostName: userName })
     });
     
     if (!res.ok) {
@@ -221,6 +240,20 @@ const LobbyPage: React.FC = () => {
                useMeetingStore.getState().setQuizResponses(res.quizResponses);
              }
            }
+
+           if (res.activeAdaptive) {
+             const store = useMeetingStore.getState();
+             store.setActiveAdaptive({ id: res.activeAdaptive.id, title: res.activeAdaptive.title, status: res.activeAdaptive.status, createdAt: res.activeAdaptive.createdAt });
+             if (res.activeAdaptive.currentQuestion) {
+               store.setAdaptiveCurrentQuestion(res.activeAdaptive.currentQuestion, res.activeAdaptive.questionIndex);
+             }
+             if (res.activeAdaptive.questionHistory) {
+               store.setAdaptiveQuestionResults(res.activeAdaptive.questionHistory);
+             }
+             if (res.activeAdaptive.scores) {
+               store.setAdaptiveScores(res.activeAdaptive.scores);
+             }
+           }
            
            if (res.pinned) {
              const [identity, source] = res.pinned.split(':');
@@ -247,6 +280,11 @@ const LobbyPage: React.FC = () => {
     }
   };
 
+  const handleJoinRoom = (roomId: string, roomDisplayName: string) => {
+    if (!userName) return alert('Vui lòng nhập tên của bạn');
+    joinRoom(roomId, roomDisplayName);
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen p-4">
       <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
@@ -255,7 +293,7 @@ const LobbyPage: React.FC = () => {
           <p className="text-gray-400 text-lg mb-8">
             Bản clone Google Meet bằng React và TypeScript.
           </p>
-          
+
           <div className="space-y-4">
             <input
               type="text"
@@ -273,26 +311,60 @@ const LobbyPage: React.FC = () => {
             />
             <input
               type="password"
-              placeholder="Mật khẩu phòng (Nếu có)"
+              placeholder="Mật khẩu phòng (Dành cho host)"
               className="w-full bg-[#3c4043] border-none rounded p-3 focus:ring-2 focus:ring-blue-500 outline-none"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
             <div className="flex gap-4">
-              <button 
+              <button
                 onClick={handleCreateRoom}
                 className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-medium flex-1"
               >
-                Cuộc họp mới
+                Tạo phòng mới
               </button>
-              <button 
+              <button
                 onClick={handleJoinByInput}
                 className="border border-gray-600 hover:bg-gray-800 px-6 py-2 rounded font-medium flex-1 text-blue-400"
               >
-                Tham gia ngay
+                Tham gia bằng mã
               </button>
             </div>
           </div>
+
+          {/* Room List */}
+          {rooms.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-lg font-medium mb-3 text-gray-300">Danh sách phòng</h2>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {rooms.map((room) => (
+                  <div
+                    key={room.id}
+                    className="flex items-center justify-between bg-[#3c4043] rounded-lg p-3 hover:bg-[#4a4d50] transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">{room.name}</span>
+                        {room.locked && <Lock size={14} className="text-yellow-400 shrink-0" />}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-gray-400 mt-1">
+                        <span>Host: {room.hostName || 'N/A'}</span>
+                        <span className="flex items-center gap-1">
+                          <Users size={12} /> {room.size} online
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleJoinRoom(room.id, room.name)}
+                      className="ml-3 bg-green-600 hover:bg-green-700 px-4 py-1.5 rounded text-sm font-medium shrink-0"
+                    >
+                      Tham gia
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-[#1a1c1e] aspect-video rounded-xl border border-gray-700 flex flex-col items-center justify-center relative overflow-hidden">
@@ -314,13 +386,13 @@ const LobbyPage: React.FC = () => {
           )}
 
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-4 z-10">
-            <button 
+            <button
               onClick={() => setIsMuted(!isMuted)}
               className={`p-3 rounded-full border border-gray-600 ${isMuted ? 'bg-red-500 border-none' : 'hover:bg-gray-700'}`}
             >
               {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
-            <button 
+            <button
               onClick={() => setIsVideoOff(!isVideoOff)}
               className={`p-3 rounded-full border border-gray-600 ${isVideoOff ? 'bg-red-500 border-none' : 'hover:bg-gray-700'}`}
             >

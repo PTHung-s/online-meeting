@@ -91,11 +91,14 @@ app.get('/api/rooms', (req, res) => {
 });
 
 app.post('/api/rooms', (req, res) => {
-  const { name, password } = req.body || {};
+  const { name, password, hostName } = req.body || {};
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Tên phòng là bắt buộc' });
   }
-  const roomId = roomManager.createRoom(name, password);
+  if (!hostName || typeof hostName !== 'string') {
+    return res.status(400).json({ error: 'Tên host là bắt buộc' });
+  }
+  const roomId = roomManager.createRoom(name, password, hostName);
   io.emit('room:list', roomManager.listRooms());
   res.json({ id: roomId });
 });
@@ -288,6 +291,128 @@ app.post('/api/ai/generate-quiz', async (req, res) => {
     }
   } catch (error: any) {
     console.error('Quiz Gen Error:', error);
+    res.status(500).json({ error: 'AI generation failed', details: error.message });
+  }
+});
+
+// Adaptive Quiz: AI recommends 5 topics based on student weaknesses
+app.post('/api/ai/adaptive-recommend', async (req, res) => {
+  const { questionHistory, topic } = req.body;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'API Key not found' });
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+
+    const historyContext = (questionHistory || []).map((qr: any, idx: number) => {
+      const pct = qr.totalCount > 0 ? Math.round((qr.correctCount / qr.totalCount) * 100) : 0;
+      return `Câu ${idx + 1}: "${qr.question?.question || ''}" - ${pct}% đúng (${qr.correctCount}/${qr.totalCount})`;
+    }).join('\n');
+
+    const prompt = `Bạn là một giảng viên lập trình phân tích kết quả trắc nghiệm adaptive.
+${topic ? `Chủ đề chung: ${topic}` : ''}
+
+Kết quả các câu hỏi đã ra:
+${historyContext || 'Chưa có câu hỏi nào.'}
+
+NHIỆM VỤ: Phân tích kiến thức học sinh còn yếu dựa trên tỷ lệ sai, rồi đề xuất 5 chủ đề/khái niệm cụ thể nên hỏi tiếp (ưu tiên phần yếu).
+
+Trả về DUY NHẤT JSON format:
+{
+  "topics": [
+    {"title": "tên chủ đề", "reason": "lý do ngắn gọn tại sao nên hỏi"},
+    ...5 mục
+  ]
+}
+
+QUY TẮC:
+- Mỗi topic phải cụ thể, có thể dùng để tạo câu hỏi trắc nghiệm.
+- Ngôn ngữ: Tiếng Việt.
+- Đảm bảo JSON valid 100%.`;
+
+    const result = await model.generateContent(prompt);
+    let jsonText = result.response.text().trim();
+    if (jsonText.startsWith('```json')) jsonText = jsonText.replace(/^```json/, '').replace(/```$/, '');
+    else if (jsonText.startsWith('```')) jsonText = jsonText.replace(/^```/, '').replace(/```$/, '');
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+
+    const data = JSON.parse(jsonText);
+    res.json(data);
+  } catch (error: any) {
+    console.error('Adaptive Recommend Error:', error);
+    res.status(500).json({ error: 'AI recommendation failed', details: error.message });
+  }
+});
+
+// Adaptive Quiz: Generate 2 questions x 2 versions for a specific topic
+app.post('/api/ai/adaptive-generate', async (req, res) => {
+  const { topic, questionHistory } = req.body;
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'API Key not found' });
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+
+    const existingQuestions = (questionHistory || []).map((qr: any) => qr.question?.question || '').filter(Boolean);
+
+    const prompt = `Bạn là giảng viên lập trình. Tạo câu hỏi trắc nghiệm cho chủ đề: "${topic}".
+
+${existingQuestions.length > 0 ? `Các câu đã hỏi (KHÔNG được trùng):\n${existingQuestions.map((q: string, i: number) => `${i + 1}. ${q}`).join('\n')}` : ''}
+
+NHIỆM VỤ:
+1. Tạo VERSION A: 2 câu hỏi trắc nghiệm MỚI về "${topic}".
+2. Tạo VERSION B: 2 câu hỏi KHÁC HOÀN TOÀN nhưng cùng chủ đề "${topic}".
+
+Trả về DUY NHẤT JSON format:
+{
+  "versionA": [
+    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "..."},
+    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "..."}
+  ],
+  "versionB": [
+    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "..."},
+    {"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": 0, "explanation": "..."}
+  ]
+}
+
+QUY TẮC:
+- versionA và versionB PHẢI khác nhau hoàn toàn về nội dung.
+- correctAnswer là index (0-3).
+- Dùng Markdown cho code: \`inline\` và \`\`\` cho block.
+- TRONG JSON: dùng \\n thay cho xuống dòng thực tế.
+- Ngôn ngữ: Tiếng Việt.
+- Đảm bảo JSON valid 100%.`;
+
+    const result = await model.generateContent(prompt);
+    let jsonText = result.response.text().trim();
+    if (jsonText.startsWith('```json')) jsonText = jsonText.replace(/^```json/, '').replace(/```$/, '');
+    else if (jsonText.startsWith('```')) jsonText = jsonText.replace(/^```/, '').replace(/```$/, '');
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+
+    try {
+      const data = JSON.parse(jsonText);
+      const addIds = (qs: any[]) => (qs || []).map((q: any) => ({ ...q, id: Math.random().toString(36).substr(2, 9) }));
+      data.versionA = addIds(data.versionA);
+      data.versionB = addIds(data.versionB);
+      res.json(data);
+    } catch {
+      const fixedJson = jsonText.replace(/"([^"\\]*(\\.[^"\\]*)*)"/g, (match: string) => {
+        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+      });
+      const data = JSON.parse(fixedJson);
+      const addIds = (qs: any[]) => (qs || []).map((q: any) => ({ ...q, id: Math.random().toString(36).substr(2, 9) }));
+      data.versionA = addIds(data.versionA);
+      data.versionB = addIds(data.versionB);
+      res.json(data);
+    }
+  } catch (error: any) {
+    console.error('Adaptive Generate Error:', error);
     res.status(500).json({ error: 'AI generation failed', details: error.message });
   }
 });

@@ -4,11 +4,24 @@ import { HelpCircle, CheckCircle2, Award, Clock, XCircle, ChevronRight, Info } f
 import { socket } from '../services/socket';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { AdaptiveQuizRunner } from './AdaptiveQuizRunner';
+import AdaptiveQuizManager from './AdaptiveQuizManager';
 
 export const QuizRunner: React.FC = () => {
-  const { activeQuiz, roomId } = useMeetingStore();
+  const { activeQuiz, roomId, activeAdaptive, adaptiveRankings, isHost } = useMeetingStore();
+
+  // Delegate to adaptive components if adaptive session is active or rankings are showing
+  if (activeAdaptive || adaptiveRankings) {
+    if (isHost) {
+      return <AdaptiveQuizManager onBack={() => {}} embedded />;
+    }
+    return <AdaptiveQuizRunner />;
+  }
   const [studentAnswers, setStudentAnswers] = useState<Record<string, number>>({});
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [score, setScore] = useState(0);
@@ -112,7 +125,7 @@ export const QuizRunner: React.FC = () => {
                      </span>
                      <div className="text-[14px] text-slate-800 font-bold leading-relaxed pt-1 w-full prose prose-slate prose-sm max-w-none">
                         <ReactMarkdown 
-                          remarkPlugins={[remarkGfm]}
+                          remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}
                           components={{
                             code: ({node, inline, className, children, ...props}: any) => {
                               const match = /language-(\w+)/.exec(className || '');
@@ -182,7 +195,7 @@ export const QuizRunner: React.FC = () => {
                             {String.fromCharCode(65 + aIdx)}
                           </span>
                           <span className="font-semibold prose prose-sm prose-slate max-w-none break-words whitespace-pre-wrap">
-                            <ReactMarkdown components={{ p: ({children}) => <>{children}</> }}>
+                            <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={{ p: ({children}) => <>{children}</> }}>
                               {opt.replace(/\\n/g, '\n')}
                             </ReactMarkdown>
                           </span>
@@ -243,7 +256,7 @@ export const QuizRunner: React.FC = () => {
                               </span>
                               <div className="text-[14px] font-bold text-slate-800 leading-snug w-full prose prose-slate prose-sm max-w-none">
                                 <ReactMarkdown 
-                                  remarkPlugins={[remarkGfm]}
+                                  remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}
                                   components={{
                                     code: ({node, inline, className, children, ...props}: any) => {
                                       const match = /language-(\w+)/.exec(className || '');
@@ -299,7 +312,7 @@ export const QuizRunner: React.FC = () => {
                                     }`}>
                                        {isCorrectOption ? <CheckCircle2 size={14} /> : isSelected ? <XCircle size={14} /> : <div className="w-3.5" />}
                                        <span className="prose prose-sm max-w-none break-words whitespace-pre-wrap">
-                                          <ReactMarkdown components={{ p: ({children}) => <>{children}</> }}>
+                                          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={{ p: ({children}) => <>{children}</> }}>
                                             {opt.replace(/\\n/g, '\n')}
                                           </ReactMarkdown>
                                        </span>
@@ -315,7 +328,7 @@ export const QuizRunner: React.FC = () => {
                                    </div>
                                    <div className="text-[12px] text-slate-600 italic leading-relaxed prose prose-slate prose-sm max-w-none">
                                       <ReactMarkdown 
-                                        remarkPlugins={[remarkGfm]}
+                                        remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}
                                         components={{
                                           code: ({node, inline, className, children, ...props}: any) => {
                                             const match = /language-(\w+)/.exec(className || '');

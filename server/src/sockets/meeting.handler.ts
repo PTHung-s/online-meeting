@@ -9,6 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const musicTimers: Map<string, NodeJS.Timeout> = new Map();
+const adaptiveTimers: Map<string, NodeJS.Timeout> = new Map();
 
 const getTrackDuration = async (filename: string): Promise<number> => {
   try {
@@ -136,8 +137,13 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
       console.log(`Join failed: Room ${roomId} not found`);
       return cb && cb({ error: 'Phòng không tồn tại' });
     }
-    if (room.password && room.password !== (password || '')) {
-      return cb && cb({ error: 'Sai mật khẩu' });
+    // Password is only required for host login
+    // Students can join without password
+    if (room.hostName && room.hostName === name) {
+      // This person claims to be the host - verify password
+      if (room.password && room.password !== (password || '')) {
+        return cb && cb({ error: 'Sai mật khẩu host' });
+      }
     }
 
     await socket.join(roomId);
@@ -208,6 +214,19 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
       assignments: room.assignments || [],
       activeQuiz: room.activeQuiz,
       quizResponses: room.quizResponses || [],
+      activeAdaptive: room.activeAdaptive ? {
+        id: room.activeAdaptive.id,
+        title: room.activeAdaptive.title,
+        status: room.activeAdaptive.status,
+        createdAt: room.activeAdaptive.createdAt,
+        currentQuestion: room.activeAdaptive.currentQuestion || null,
+        questionIndex: room.activeAdaptive.questionIndex,
+        questionHistory: room.activeAdaptive.questionHistory,
+        scores: Array.from(room.activeAdaptive.scores.entries()).map(([id, score]) => {
+          const p = room.participants.get(id);
+          return { socketId: id, userName: p?.name || '', score };
+        })
+      } : null,
       aiHistory: (room.aiHistory && name) ? room.aiHistory.get(name) : []
     });
   });
@@ -398,6 +417,177 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
 
     room.activeQuiz = null;
     io.to(roomId).emit('quiz:ended');
+  });
+
+  // === Adaptive Quiz Handlers ===
+  socket.on('adaptive:start', ({ roomId, title }, cb) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room || socket.id !== room.hostId) return cb && cb({ error: 'Deny' });
+
+    room.activeAdaptive = {
+      id: Date.now().toString(),
+      title,
+      status: 'active',
+      createdAt: Date.now(),
+      questionIndex: 0,
+      questionHistory: [],
+      responses: new Map(),
+      scores: new Map(),
+    };
+
+    io.to(roomId).emit('adaptive:started', {
+      session: { id: room.activeAdaptive.id, title, status: 'active', createdAt: room.activeAdaptive.createdAt }
+    });
+    cb && cb({ ok: true });
+  });
+
+  socket.on('adaptive:push-question', ({ roomId, question }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room || socket.id !== room.hostId || !room.activeAdaptive) return;
+
+    room.activeAdaptive.currentQuestion = question;
+    room.activeAdaptive.questionIndex++;
+    room.activeAdaptive.responses = new Map();
+
+    io.to(roomId).emit('adaptive:question', {
+      question,
+      questionIndex: room.activeAdaptive.questionIndex
+    });
+  });
+
+  socket.on('adaptive:answer', ({ roomId, selectedOption }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room || !room.activeAdaptive || !room.activeAdaptive.currentQuestion) return;
+    if (socket.id === room.hostId) return; // Host can't answer
+
+    const q = room.activeAdaptive.currentQuestion;
+    const isCorrect = selectedOption === q.correctAnswer;
+    room.activeAdaptive.responses.set(socket.id, { selectedOption, isCorrect });
+
+    // Update score
+    if (isCorrect) {
+      const currentScore = room.activeAdaptive.scores.get(socket.id) || 0;
+      room.activeAdaptive.scores.set(socket.id, currentScore + 1);
+    }
+
+    // Confirm to the student
+    socket.emit('adaptive:answer-confirmed', { isCorrect });
+
+    // Count connected non-host participants
+    const connectedStudents = Array.from(room.participants.entries())
+      .filter(([id, p]) => p.isConnected && id !== room.hostId);
+    const totalStudents = connectedStudents.length;
+    const answeredCount = room.activeAdaptive.responses.size;
+
+    // Notify host of progress
+    io.to(room.hostId).emit('adaptive:answer-received', {
+      count: answeredCount,
+      total: totalStudents
+    });
+
+    // If all answered, broadcast stats
+    if (answeredCount >= totalStudents) {
+      const results = connectedStudents.map(([id, p]) => {
+        const resp = room.activeAdaptive!.responses.get(id);
+        return {
+          socketId: id,
+          userName: p.name,
+          selectedOption: resp?.selectedOption ?? -1,
+          isCorrect: resp?.isCorrect ?? false,
+        };
+      });
+
+      const questionResult = {
+        question: q,
+        results,
+        correctCount: results.filter(r => r.isCorrect).length,
+        totalCount: results.length
+      };
+
+      room.activeAdaptive.questionHistory.push(questionResult);
+
+      const scores = connectedStudents.map(([id, p]) => ({
+        socketId: id,
+        userName: p.name,
+        score: room.activeAdaptive!.scores.get(id) || 0
+      }));
+
+      io.to(roomId).emit('adaptive:question-stats', { questionResult, scores });
+
+      // Clear current question
+      room.activeAdaptive.currentQuestion = undefined;
+
+      // Start 15s countdown for next question
+      const existingTimer = adaptiveTimers.get(roomId);
+      if (existingTimer) clearTimeout(existingTimer);
+
+      io.to(roomId).emit('adaptive:countdown', { seconds: 15 });
+
+      const timer = setTimeout(() => {
+        adaptiveTimers.delete(roomId);
+        // Signal host to auto-push next question
+        if (room.activeAdaptive && !room.activeAdaptive.currentQuestion) {
+          io.to(room.hostId).emit('adaptive:auto-next');
+        }
+      }, 15000);
+      adaptiveTimers.set(roomId, timer);
+    }
+  });
+
+  socket.on('adaptive:skip-countdown', ({ roomId }) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room || socket.id !== room.hostId) return;
+    const timer = adaptiveTimers.get(roomId);
+    if (timer) {
+      clearTimeout(timer);
+      adaptiveTimers.delete(roomId);
+    }
+    io.to(roomId).emit('adaptive:countdown', { seconds: 0 });
+  });
+
+  socket.on('adaptive:end', ({ roomId }, cb) => {
+    const room = roomManager.getRoom(roomId);
+    if (!room || socket.id !== room.hostId || !room.activeAdaptive) return cb && cb({ error: 'Deny' });
+
+    // Calculate final ranking and apply bonus points
+    const connectedStudents = Array.from(room.participants.entries())
+      .filter(([id, p]) => p.isConnected && id !== room.hostId);
+
+    const rankings = connectedStudents
+      .map(([id, p]) => ({
+        socketId: id,
+        userName: p.name,
+        score: room.activeAdaptive!.scores.get(id) || 0
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    // Apply bonus points to participants
+    rankings.forEach((r, index) => {
+      const participant = room.participants.get(r.socketId);
+      if (participant) {
+        let bonus = 0;
+        if (index === 0) bonus = 3;
+        else if (index === 1) bonus = 2;
+        else if (index === 2) bonus = 1;
+        if (index === rankings.length - 1 && rankings.length >= 2) bonus = -1;
+        participant.points = (participant.points || 0) + bonus;
+      }
+    });
+
+    // Emit updated points
+    io.to(roomId).emit('peer:update-points', {
+      points: Array.from(room.participants.entries()).map(([id, p]) => ({
+        socketId: id,
+        points: p.points || 0
+      }))
+    });
+
+    const endTimer = adaptiveTimers.get(roomId);
+    if (endTimer) { clearTimeout(endTimer); adaptiveTimers.delete(roomId); }
+
+    io.to(roomId).emit('adaptive:ended', { rankings });
+    room.activeAdaptive = null;
+    cb && cb({ ok: true });
   });
 
   socket.on('room:remoteFullscreen', ({ roomId, tileId, active }, cb) => {
@@ -668,14 +858,8 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
         socket.to(roomId).emit('peer:left', { socketId: socket.id });
         
         roomManager.removeParticipant(roomId, socket.id);
-        
-        // Wait 1 minute before checking if room is empty to delete it
-        setTimeout(() => {
-          if (roomManager.isRoomEmpty(roomId)) {
-            console.log(`[Server] Room ${roomId} has been empty for 1 minute. Deleting...`);
-            roomManager.deleteRoom(roomId);
-          }
-        }, 60000); 
+
+        // Room persists permanently - only deleted by host action
       }
     }
   });

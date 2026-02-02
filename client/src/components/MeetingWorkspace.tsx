@@ -61,17 +61,19 @@ const getLayout = (hasQuiz: boolean): IJsonModel => ({
 export const MeetingWorkspace: React.FC<{
   onShowHistory: (socketId: string) => void;
 }> = ({ onShowHistory }) => {
-  const { activeQuiz } = useMeetingStore();
-  
+  const { activeQuiz, activeAdaptive } = useMeetingStore();
+
+  const hasQuiz = !!activeQuiz || !!activeAdaptive;
+
   // Create model based on whether quiz exists
   const model = useMemo(() => {
-    const layout = getLayout(!!activeQuiz);
+    const layout = getLayout(hasQuiz);
     return Model.fromJson(layout);
-  }, [activeQuiz?.id]); // Use quiz ID to trigger re-layout when a new quiz starts
+  }, [activeQuiz?.id, activeAdaptive?.id]); // Use quiz/adaptive ID to trigger re-layout
 
   // Auto-select quiz tab when it appears
   React.useEffect(() => {
-    if (activeQuiz) {
+    if (hasQuiz) {
       const timer = setTimeout(() => {
         try {
           model.doAction(Actions.selectTab("quiz"));
@@ -79,7 +81,7 @@ export const MeetingWorkspace: React.FC<{
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [activeQuiz, model]);
+  }, [hasQuiz, model]);
 
   const factory = useCallback((node: TabNode) => {
     const component = node.getComponent();

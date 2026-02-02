@@ -42,6 +42,17 @@ export interface Room {
   assignments: Assignment[];
   activeQuiz?: any;
   quizResponses?: any[];
+  activeAdaptive?: {
+    id: string;
+    title: string;
+    status: 'active' | 'ended';
+    createdAt: number;
+    currentQuestion?: any;
+    questionIndex: number;
+    questionHistory: any[];
+    responses: Map<string, { selectedOption: number; isCorrect: boolean }>;
+    scores: Map<string, number>;
+  } | null;
   aiHistory?: Map<string, any[]>;
   musicState?: MusicState;
 }
@@ -63,6 +74,7 @@ export interface MusicPoll {
 export interface RoomInfo {
   id: string;
   name: string;
+  hostName: string;
   locked: boolean;
   size: number;
   createdAt: number;

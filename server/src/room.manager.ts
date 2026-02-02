@@ -4,14 +4,14 @@ import { nanoid } from 'nanoid';
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
 
-  createRoom(name: string, password?: string): string {
+  createRoom(name: string, password?: string, hostName?: string): string {
     const roomId = nanoid(8);
     this.rooms.set(roomId, {
       id: roomId,
       name,
       password: password || '',
       hostId: '',
-      hostName: '', // Will be set by the first person who joins (the creator)
+      hostName: hostName || '', // Set at creation time by the creator
       participants: new Map(),
       createdAt: Date.now(),
       messages: [],
@@ -43,6 +43,7 @@ export class RoomManager {
     return Array.from(this.rooms.entries()).map(([roomId, r]) => ({
       id: roomId,
       name: r.name,
+      hostName: r.hostName || '',
       locked: Boolean(r.password),
       size: Array.from(r.participants.values()).filter(p => p.isConnected).length,
       createdAt: r.createdAt,
@@ -96,8 +97,11 @@ export class RoomManager {
         activityStats: []
       });
 
-      // If no host yet, this first person becomes the host
-      if (!room.hostId) {
+      // Host is determined by matching hostName set at room creation
+      if (room.hostName && room.hostName === name) {
+        room.hostId = socketId;
+      } else if (!room.hostName && !room.hostId) {
+        // Fallback: if no hostName was set, first person becomes host
         room.hostId = socketId;
         room.hostName = name;
       }
