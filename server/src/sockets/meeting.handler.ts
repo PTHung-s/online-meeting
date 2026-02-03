@@ -9,6 +9,38 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const musicTimers: Map<string, NodeJS.Timeout> = new Map();
+
+// Play count tracking
+const playCountFile = path.join(__dirname, '../../data/playCount.json');
+
+const loadPlayCounts = (): { [track: string]: number } => {
+  try {
+    if (fs.existsSync(playCountFile)) {
+      return JSON.parse(fs.readFileSync(playCountFile, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('❌ [loadPlayCounts] Error:', e);
+  }
+  return {};
+};
+
+const savePlayCounts = (counts: { [track: string]: number }) => {
+  try {
+    const dir = path.dirname(playCountFile);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(playCountFile, JSON.stringify(counts, null, 2));
+  } catch (e) {
+    console.error('❌ [savePlayCounts] Error:', e);
+  }
+};
+
+const incrementPlayCount = (track: string) => {
+  const counts = loadPlayCounts();
+  counts[track] = (counts[track] || 0) + 1;
+  savePlayCounts(counts);
+};
 const adaptiveTimers: Map<string, NodeJS.Timeout> = new Map();
 
 const getTrackDuration = async (filename: string): Promise<number> => {
@@ -70,6 +102,7 @@ const advanceTrack = async (io: Server, roomId: string) => {
   }
 
   if (finalTrack) {
+    incrementPlayCount(finalTrack);
     const nextDuration = await getTrackDuration(finalTrack);
     room.musicState = {
       currentTrack: finalTrack,
@@ -119,9 +152,18 @@ const getPlaylist = () => {
 
 const generatePoll = (exclude?: string | null) => {
   const playlist = getPlaylist();
+  const playCounts = loadPlayCounts();
+
+  // Sort by play count (ascending) - least played first
+  // If same play count, randomize
   return playlist
     .filter(t => t !== exclude)
-    .sort(() => Math.random() - 0.5)
+    .sort((a, b) => {
+      const countA = playCounts[a] || 0;
+      const countB = playCounts[b] || 0;
+      if (countA !== countB) return countA - countB;
+      return Math.random() - 0.5; // Random tie-breaker
+    })
     .slice(0, 4);
 };
 
@@ -745,9 +787,18 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
 
     if (!room.musicState) {
       const playlist = getPlaylist();
-      const firstTrack = playlist[0] || null;
+      // Pick least played track as first track
+      const playCounts = loadPlayCounts();
+      const sortedPlaylist = [...playlist].sort((a, b) => {
+        const countA = playCounts[a] || 0;
+        const countB = playCounts[b] || 0;
+        if (countA !== countB) return countA - countB;
+        return Math.random() - 0.5;
+      });
+      const firstTrack = sortedPlaylist[0] || null;
+      if (firstTrack) incrementPlayCount(firstTrack);
       const duration = firstTrack ? await getTrackDuration(firstTrack) : 0;
-      
+
       room.musicState = {
         currentTrack: firstTrack,
         isPlaying: isPlaying,
@@ -772,7 +823,16 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
         if (!room.musicState.currentTrack) {
           const playlist = getPlaylist();
           if (playlist.length > 0) {
-            room.musicState.currentTrack = playlist[0];
+            // Pick least played track
+            const playCounts = loadPlayCounts();
+            const sortedPlaylist = [...playlist].sort((a, b) => {
+              const countA = playCounts[a] || 0;
+              const countB = playCounts[b] || 0;
+              if (countA !== countB) return countA - countB;
+              return Math.random() - 0.5;
+            });
+            room.musicState.currentTrack = sortedPlaylist[0];
+            incrementPlayCount(room.musicState.currentTrack);
             const duration = await getTrackDuration(room.musicState.currentTrack);
             room.musicState.duration = duration;
             room.musicState.poll = {
