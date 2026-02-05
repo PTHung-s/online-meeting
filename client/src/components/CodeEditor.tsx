@@ -298,6 +298,7 @@ const CodeEditor: React.FC = () => {
 
     return () => {
       socket.off('code:delta', handleCodeDelta);
+      socket.off('code:sync', handleFullSync);
       socket.off('cursor:sync', handleCursorSync);
       socket.off('peer:left');
     };
@@ -421,6 +422,10 @@ const CodeEditor: React.FC = () => {
       if (!peerCursors.has(id) || !isStillRelevant) {
         editor.deltaDecorations(decorationsRef.current[id], []);
         delete decorationsRef.current[id];
+        // Also remove the style element from DOM
+        const styleId = `peer-style-${id.replace(/[^a-zA-Z0-9]/g, '')}`;
+        const styleEl = document.getElementById(styleId);
+        if (styleEl) styleEl.remove();
       }
     });
 

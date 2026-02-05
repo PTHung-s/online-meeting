@@ -184,9 +184,12 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
   aiInput: '',
   aiAttachments: [],
   setAiInput: (input: string) => set({ aiInput: input }),
-  addAiMessage: (msg: AiMessage) => set((state) => ({ 
-    aiMessages: [...state.aiMessages, { ...msg, id: msg.id || Date.now().toString() + Math.random() }] 
-  })),
+  addAiMessage: (msg: AiMessage) => set((state) => {
+    // Limit to 100 AI messages to prevent memory bloat
+    const newMessages = [...state.aiMessages, { ...msg, id: msg.id || Date.now().toString() + Math.random() }];
+    const limitedMessages = newMessages.length > 100 ? newMessages.slice(-100) : newMessages;
+    return { aiMessages: limitedMessages };
+  }),
   setAiMessages: (msgs: AiMessage[]) => set({ aiMessages: msgs }),
   clearAiMessages: () => set({ aiMessages: [] }),
   attachToAi: (content: string, label: string, type: AiAttachment['type'], fileData?: string, mimeType?: string) => set((state) => {
@@ -338,10 +341,15 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
     peers: state.peers.map((p) => p.socketId === socketId ? { ...p, ...peerState } : p)
   })),
   unreadMessageCount: 0,
-  addMessage: (msg) => set((state) => ({ 
-    messages: [...state.messages, msg],
-    unreadMessageCount: state.activeTab !== 'chat' ? state.unreadMessageCount + 1 : 0
-  })),
+  addMessage: (msg) => set((state) => {
+    // Limit to 200 messages to prevent memory bloat
+    const newMessages = [...state.messages, msg];
+    const limitedMessages = newMessages.length > 200 ? newMessages.slice(-200) : newMessages;
+    return {
+      messages: limitedMessages,
+      unreadMessageCount: state.activeTab !== 'chat' ? state.unreadMessageCount + 1 : 0
+    };
+  }),
   setMessages: (msgs) => set({ messages: msgs }),
   resetUnreadMessages: () => set({ unreadMessageCount: 0 }),
   setPeers: (peers) => set((state) => {
@@ -385,7 +393,9 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
     const newPeerCodes = new Map(state.peerCodes);
     const peerData = newPeerCodes.get(socketId);
     if (peerData) {
-      newPeerCodes.set(socketId, { ...peerData, activityStats });
+      // Limit activityStats to last 5 minutes (300 entries max assuming 1 per second)
+      const limitedStats = activityStats.length > 300 ? activityStats.slice(-300) : activityStats;
+      newPeerCodes.set(socketId, { ...peerData, activityStats: limitedStats });
     }
     return {
       peerCodes: newPeerCodes,
@@ -524,9 +534,7 @@ export const useMeetingStore = create<MeetingState>()(persist((set) => ({
     userName: state.userName,
     code: state.code,
     selectedLanguage: state.selectedLanguage,
-    messages: state.messages,
-    aiMessages: state.aiMessages,
-    aiAttachments: state.aiAttachments,
+    // NOT persisting messages, aiMessages, aiAttachments to prevent localStorage bloat
     draftQuiz: state.draftQuiz,
     stdin: state.stdin,
   }),

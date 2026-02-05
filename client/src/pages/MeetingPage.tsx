@@ -65,6 +65,7 @@ const MeetingPage: React.FC = () => {
   const [showAssignmentManager, setShowAssignmentManager] = useState(false);
   const [lastMessagePreview, setLastMessagePreview] = useState<Message | null>(null);
   const previewTimerRef = useRef<any>(null);
+  const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // --- Socket.io Listeners for Peer Synchronization ---
   useEffect(() => {
@@ -94,11 +95,14 @@ const MeetingPage: React.FC = () => {
         
         // Show notification if not in chat tab
         if (store.activeTab !== 'chat') {
-          // Subtle "Digital Chime" notification sound
-          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
-          audio.volume = 0.5; // Slightly lower volume for better UX
-          audio.play().catch(e => console.log('Notification sound suppressed:', e));
-          
+          // Reuse single audio instance to prevent memory leak
+          if (!notificationAudioRef.current) {
+            notificationAudioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+            notificationAudioRef.current.volume = 0.5;
+          }
+          notificationAudioRef.current.currentTime = 0;
+          notificationAudioRef.current.play().catch(e => console.log('Notification sound suppressed:', e));
+
           setLastMessagePreview(msg);
           if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
           previewTimerRef.current = setTimeout(() => setLastMessagePreview(null), 5000);
@@ -222,6 +226,11 @@ const MeetingPage: React.FC = () => {
     }
 
     return () => {
+      // Clear preview timer
+      if (previewTimerRef.current) {
+        clearTimeout(previewTimerRef.current);
+        previewTimerRef.current = null;
+      }
       socket.off('peer:joined');
       socket.off('peer:left');
       socket.off('chat:message');

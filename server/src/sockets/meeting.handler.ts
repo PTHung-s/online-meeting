@@ -39,7 +39,17 @@ const savePlayCounts = (counts: { [track: string]: number }) => {
 const incrementPlayCount = (track: string) => {
   const counts = loadPlayCounts();
   counts[track] = (counts[track] || 0) + 1;
-  savePlayCounts(counts);
+
+  // Prune: remove tracks that no longer exist in playlist
+  const currentPlaylist = new Set(getPlaylist());
+  const prunedCounts: { [track: string]: number } = {};
+  for (const [t, c] of Object.entries(counts)) {
+    if (currentPlaylist.has(t)) {
+      prunedCounts[t] = c;
+    }
+  }
+
+  savePlayCounts(prunedCounts);
 };
 const adaptiveTimers: Map<string, NodeJS.Timeout> = new Map();
 
@@ -916,8 +926,22 @@ export const registerMeetingHandlers = (io: Server, socket: Socket) => {
       const room = roomManager.getRoom(roomId);
       if (room) {
         socket.to(roomId).emit('peer:left', { socketId: socket.id });
-        
+
         roomManager.removeParticipant(roomId, socket.id);
+
+        // If host disconnects, cleanup timers
+        if (socket.id === room.hostId) {
+          const musicTimer = musicTimers.get(roomId);
+          if (musicTimer) {
+            clearTimeout(musicTimer);
+            musicTimers.delete(roomId);
+          }
+          const adaptiveTimer = adaptiveTimers.get(roomId);
+          if (adaptiveTimer) {
+            clearTimeout(adaptiveTimer);
+            adaptiveTimers.delete(roomId);
+          }
+        }
 
         // Room persists permanently - only deleted by host action
       }

@@ -156,6 +156,10 @@ export class RoomManager {
       participant.violationHistory = [];
     }
     participant.violationHistory.push({ type, reason, timestamp: Date.now() });
+    // Limit to last 100 violations to prevent memory bloat
+    if (participant.violationHistory.length > 100) {
+      participant.violationHistory = participant.violationHistory.slice(-100);
+    }
     return true;
   }
 
